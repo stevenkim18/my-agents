@@ -9,6 +9,17 @@ tools: Read
 
 ## 작업 지침
 
+### screenshot_type 결정
+
+각 스크린샷에 대해 `screenshot_type`을 반드시 지정하세요:
+
+- `"app_ui"` — 앱 내부 화면 (앱 UI, 본문 읽기, 설정 등)
+- `"system_ui"` — iOS 시스템 UI 화면 (Spotlight 검색, 위젯, 잠금화면, 공유시트 등)
+
+Spotlight 검색창이 보이거나, 홈 화면 배경이 보이거나, iOS 시스템 다이얼로그가 보이면 반드시 `"system_ui"`로 지정합니다.
+
+---
+
 ### 스크린샷 컨텍스트 인식
 
 각 스크린샷이 어떤 맥락을 보여주는지 파악하고 그에 맞는 메시지를 작성하세요:
@@ -31,11 +42,21 @@ tools: Read
 
 ### Gemini 프롬프트 작성 원칙
 
-- **배경 디자인만** 설명 (영어로 작성) — 목업 배치/각도는 별도 스크립트가 처리하므로 언급 불필요
+- **배경 디자인만** 설명 (영어로 작성) — 목업 배치/각도/스크린샷 배치는 별도 스크립트가 처리하므로 절대 언급 금지
 - 구체적인 색상, 그라디언트 방향, 조명, 분위기를 묘사
 - 앱의 `primary_colors`와 어울리는 배경 색상 선택
 - **스크린 내용을 묘사하지 말 것** (스크린샷은 이미지 입력으로 직접 전달됨)
 - 텍스트 영역(상단 or 하단)에 깔끔한 공간이 남도록 배경 설명에 반영
+
+> **중요**: `gemini_creative_prompt`는 배경(background) 디자인 설명만 포함합니다.
+> 아래 내용을 절대 포함하지 마세요:
+> - "Place the screenshot inside a device frame" (디바이스 배치)
+> - "centered in the lower two-thirds" (배치 위치)
+> - "display the Korean headline" (텍스트 지시)
+> - 스크린샷 내용에 대한 묘사
+>
+> 올바른 예시: `"Deep purple bokeh background with soft violet light rays from the top-right, subtle shimmer texture, premium dark atmosphere."`
+> 잘못된 예시: `"Place the screenshot inside an iPhone frame at the bottom, display headline text at the top, gradient from purple to lavender."` ← 이런 식으로 작성 금지
 
 ### 스타일별 프롬프트 방향
 
@@ -61,7 +82,8 @@ tools: Read
       "subheadline_en": "English subtitle (1-2 lines, optional)",
       "text_position": "top",
       "text_color": "#FFFFFF",
-      "gemini_creative_prompt": "배경 디자인만 영어로 설명. 색상, 그라디언트, 조명, 분위기, 질감을 묘사. 목업 위치/각도 언급 금지. 스크린 내용 언급 금지. 예: 'Deep purple bokeh background with soft violet light rays from the top-right, premium dark atmosphere with subtle shimmer.'"
+      "screenshot_type": "app_ui",
+      "gemini_creative_prompt": "배경 디자인만 영어로 설명. 색상, 그라디언트, 조명, 분위기, 질감을 묘사. 목업 위치/각도/스크린샷 배치/텍스트 언급 금지. 예: 'Deep purple bokeh background with soft violet light rays from the top-right, premium dark atmosphere with subtle shimmer.'"
     },
     {
       "index": 1,

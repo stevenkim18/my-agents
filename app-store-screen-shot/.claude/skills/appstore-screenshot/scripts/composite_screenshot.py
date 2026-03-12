@@ -62,15 +62,17 @@ def find_screen_corners(bg_rgb: np.ndarray) -> np.ndarray:
     largest = max(contours, key=cv2.contourArea)
     print(f"가장 큰 그린 영역 넓이: {cv2.contourArea(largest):.0f}px²")
 
-    peri = cv2.arcLength(largest, True)
-    approx = cv2.approxPolyDP(largest, 0.02 * peri, True)
-
-    if len(approx) == 4:
-        corners = approx.reshape(4, 2).astype(np.float32)
-    else:
-        print(f"다각형 꼭짓점 수: {len(approx)}, 최소 사각형으로 대체합니다.")
-        rect = cv2.minAreaRect(largest)
-        corners = cv2.boxPoints(rect).astype(np.float32)
+    # 기기는 항상 수직(upright)이므로 축 정렬 boundingRect를 사용한다.
+    # approxPolyDP로 찾은 4개 꼭짓점도 Gemini 생성 오차로 인해
+    # 미세하게 기울어진 사다리꼴이 될 수 있어 기울어짐이 발생한다.
+    x, y, w, h = cv2.boundingRect(largest)
+    print(f"스크린 영역 (축 정렬): x={x}, y={y}, w={w}, h={h}")
+    corners = np.array([
+        [x,     y    ],
+        [x + w, y    ],
+        [x + w, y + h],
+        [x,     y + h],
+    ], dtype=np.float32)
 
     return order_points(corners)
 
@@ -111,42 +113,41 @@ def composite_screenshot_onto_mockup(
     dst_corners: np.ndarray,
 ) -> Image.Image:
     """
-    perspective transform으로 스크린샷을 목업 스크린 위치에 합성.
-    스크린샷은 미리 crop_to_screen_ratio로 비율을 맞춘 상태여야 합니다.
+    스크린샷을 목업 스크린 위치에 합성.
+
+    - 배치: dst_corners(축 정렬 boundingRect) 기준으로 단순 resize → 기울어짐 없음
+    - 클리핑: 원본 그린 마스크 형태(둥근 모서리 + Dynamic Island 노치)대로 잘라냄
+      → 스크린샷이 기기 프레임 밖으로 삐져나오지 않음
     """
-    # 크롭된 스크린샷을 스크린 영역에 맞게 변환
-    cropped = crop_to_screen_ratio(screenshot, dst_corners)
-    sw, sh = cropped.size
-    src_pts = np.array([[0, 0], [sw, 0], [sw, sh], [0, sh]], dtype=np.float32)
-
-    M = cv2.getPerspectiveTransform(src_pts, dst_corners)
-
     bg_rgba = np.array(bg.convert("RGBA"))
-    ss_rgba = np.array(cropped.convert("RGBA"))
-
-    warped = cv2.warpPerspective(
-        ss_rgba, M, (bg.width, bg.height),
-        flags=cv2.INTER_LANCZOS4,
-        borderMode=cv2.BORDER_CONSTANT,
-        borderValue=(0, 0, 0, 0),
-    )
-
     green_mask = create_green_mask(bg_rgba[:, :, :3])
 
-    # 그린 마스크를 약간 팽창(dilate)시켜 가장자리 잔여 제거
-    kernel = np.ones((9, 9), np.uint8)
-    green_mask_dilated = cv2.dilate(green_mask, kernel, iterations=2)
+    # boundingRect로 배치 좌표 계산
+    tl, tr, br, bl = dst_corners
+    x = int(round(tl[0]))
+    y = int(round(tl[1]))
+    w = int(round(tr[0] - tl[0]))
+    h = int(round(bl[1] - tl[1]))
 
-    warped_valid = warped[:, :, 3] > 10
+    # 스크린 비율에 맞게 하단 크롭 후 리사이즈
+    cropped = crop_to_screen_ratio(screenshot, dst_corners)
+    ss_resized = np.array(cropped.convert("RGBA"))
+    ss_resized = cv2.resize(ss_resized, (w, h), interpolation=cv2.INTER_LANCZOS4)
+
+    # 전체 캔버스 크기의 스크린샷 레이어 생성
+    canvas = np.zeros_like(bg_rgba)
+    y2 = min(y + h, canvas.shape[0])
+    x2 = min(x + w, canvas.shape[1])
+    canvas[y:y2, x:x2] = ss_resized[:y2 - y, :x2 - x]
+
+    # 그린 마스크(둥근 모서리 + 노치 형태)로 클리핑
+    # 미세한 초록 잔여를 없애기 위해 살짝 팽창
+    kernel = np.ones((5, 5), np.uint8)
+    clip_mask = cv2.dilate(green_mask, kernel, iterations=1)
 
     result = bg_rgba.copy()
-    # 팽창된 그린 영역 + warped 유효 픽셀 모두 교체
-    replace_mask = (green_mask_dilated > 0) | warped_valid
-    result[replace_mask] = warped[replace_mask]
-
-    # warped가 완전 투명한 그린 잔여는 검정으로 채움
-    fully_transparent = warped[:, :, 3] == 0
-    result[fully_transparent & (green_mask_dilated > 0)] = [0, 0, 0, 255]
+    mask_bool = clip_mask > 0
+    result[mask_bool] = canvas[mask_bool]
 
     return Image.fromarray(result, "RGBA")
 
